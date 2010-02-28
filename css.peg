@@ -1,0 +1,84 @@
+program <- S* stylesheet {(-> `(,a ,b) `(stylesheet ,@b))}
+digit <- [0123456789]
+nmstart<- [ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_]
+nmchar <- nmstart / [0123456789-]
+minus <- "-" 
+IDENT <- nmstart nmchar* { (-> `(,a ,b) (intern-ident `(,a ,b))) }
+NUMBER <- digit+ { (-> `(,a) (make-number a)) } / digit* "." digit+ { (-> `(,a ,b ,c) (make-number `(,a #\\. ,c))) }
+ws <- [ \t]
+nl <- [\n]
+comment <- "/*" (!"*/" .)* "*/"
+ws_or_nl<- ws/nl
+S <- ws_or_nl/comment
+stylesheet <- stmt* 
+stmt <- rule / media
+rule <- rule_lhs rule_rhs {(-> `(,a ,b) `(css-rule ,a -> ,@b))}
+rule_lhs <- selector more_selector*  {(-> `(,a ,b) (if b `(or ,a ,@b) a))}
+more_selector <-  "," S* selector {(-> `(,a ,b ,c) c)}
+rule_rhs <- "{" decls  ";"? S* "}" S*  {(-> `(,a ,b ,c ,d ,e ,f) b)}
+decls <- S* declaration more_declaration* {(-> `(,a ,b  ,c) `(,b ,@c))}
+more_declaration <- ";" S* declaration {(-> `(,a ,b ,c) c)}
+
+selector <- simple_selector selector_trailer? {(->`(,a ,b) (if (or (not b) (eq b 'METAPEG::OPTIONAL)) a `(,(car b) ,a ,(second b))))}
+selector_trailer <- selector_trailer_a / selector_trailer_b / selector_trailer_c / selector_trailer_d
+selector_trailer_a <- combinator selector
+selector_trailer_b <- S+ combinator selector {(-> `(,a ,b ,c) `(,b ,c))}
+selector_trailer_c <- S+ selector            {(-> `(,a ,b) `(decendent ,b))}
+selector_trailer_d <- S+                     {(-> `(,a) nil)}
+
+simple_selector <- element_name simple_selector_etc* {(-> `(,a ,b) (if b `(path ,a ,@b) a))} / simple_selector_etc+ {(-> `(,a) (if (cdr a) `(path ,@a) (first a)))}
+simple_selector_etc <- id_selector / class_selector / attrib_selector / pseudo_selector
+
+element_name <- element_selector / wild_element_selector
+element_selector <- IDENT {(-> `(,a) `(element ,a))}
+wild_element_selector <- "*" {(-> `(,a) '(element *))}
+
+id_selector     <- "#" IDENT {(-> `(,a ,b) `(id ,b))}
+class_selector  <- "." IDENT {(-> `(,a ,b) `(class ,b))}
+attrib_selector <- "[" S* IDENT ( ("=" / "~=" / "|=" ) S* ( IDENT / STRING ) S*)? "]"
+pseudo_selector <- ":" IDENT {(-> `(,a ,b) `(pseudo ,b))}
+tbd_pseudo_selector <- ":" IDENT ( "(" ( IDENT S* )? ")" )?  {(-> `(,a ,b ,c ,d ,e) 'pseudo_selector_tbd)}
+
+combinator <- "+" S* {(-> `(,a ,b) 'adjacent)} / ">" S* {(-> `(,a ,b) 'child)}
+
+declaration <- property ":" S* expr prio?  {(-> `(,a ,b ,c ,d ,e) `(,a ,(if (eq 'metapeg::optional e) d `(priority ,d))))}
+property <- IDENT S* { (-> `(,a ,b) a) }
+prio <- "!" S* {(-> `(,a ,b) t)}
+expr <- term ( operator? term )* {(-> `(,a ,b) (build-expr `(,a ,b)))}
+operator <- operator_a S* {(-> `(,a ,b) a)}
+operator_a <-  "/" {(-> `(,a) 'divide)} / "," {(-> `(,a) 'comma)}
+term <- unary_op measure {(-> `(,a ,b) `(,a ,b))} / measure / other_term
+unary_op <- "-" {(-> `(,a) '-)} / "+" {(-> `(,a) '+)}
+measure <- mess S* { (-> `(,a ,b) a) }
+mess <- em_m / ex_m / px_m / cm_m / mm_m / in_m / pt_m / pc_m / deg_m / rad_m / grad_m / ms_m / s_m / hx_m / khz_m / precent_m / dim_m / raw_m
+em_m <- NUMBER "em" {(-> `(,a ,b) `(em ,a))} 
+ex_m <- NUMBER "ex" {(-> `(,a ,b) `(ex ,a))}
+px_m <- NUMBER "px" {(-> `(,a ,b) `(px ,a))}
+cm_m <- NUMBER "cm" {(-> `(,a ,b) `(cm ,a))}
+mm_m <- NUMBER "mm" {(-> `(,a ,b) `(mm ,a))}
+in_m <- NUMBER "in" {(-> `(,a ,b) `(in ,a))}
+pt_m <- NUMBER "pt" {(-> `(,a ,b) `(pt ,a))}
+pc_m <- NUMBER "pc" {(-> `(,a ,b) `(pc ,a))}
+deg_m <- NUMBER "deg" {(-> `(,a ,b) `(deg ,a))}
+rad_m <- NUMBER "rad" {(-> `(,a ,b) `(rad ,a))}
+grad_m <- NUMBER "grad" {(-> `(,a ,b) `(grad ,a))}
+ms_m <- NUMBER "ms" {(-> `(,a ,b) `(ms ,a))}
+s_m <- NUMBER "s" {(-> `(,a ,b) `(s ,a))}
+hx_m <- NUMBER "hz" {(-> `(,a ,b) `(hz ,a))}
+khz_m <- NUMBER "khz" {(-> `(,a ,b) `(khz ,a))}
+precent_m <- NUMBER "%" {(-> `(,a ,b) `(percent ,a))}
+dim_m <- NUMBER IDENT {(-> `(,a ,b) `(dimension ,a ,b))} 
+raw_m <- NUMBER
+
+other_term <- STRING S* {(-> `(,a ,b) a)} / URI S* {(-> `(,a ,b) a)} / IDENT S* {(-> `(,a ,b) a)}  / hexcolor S* {(-> `(,a ,b) a)} / function
+
+function <- IDENT "(" S* expr ")" S* {(-> `(,a ,b ,c ,d ,e ,f) `(funcall ,a ,d))}
+STRING <- ["] ( !["] . )* ["] {(-> `(,a ,b ,c) (coerce (mapcar #'second b) 'string))}
+URI <- "url(" ( !")" . )* ")" {(-> `(,a ,b ,c) `(url ,(coerce (mapcar #'second b) 'string)))}
+hexcolor <- "#" hex hex hex hex hex hex { (make-hex (subseq data 1 7)) } / "#" hex hex hex { (make-hex (subseq data 1 4)) }
+hex <-[0123456789abcdefABCDEF]
+
+
+medium <- IDENT S* { (-> `(,a ,b) a) }
+medium-list <- medium ("," S* medium)* {(-> `(,a ,b) `(,@a ,@(mapcar #'third b)))}
+media <- "@media" S* medium "{" S* stylesheet "}"  { (-> `(,a,b,c,d,e,f,g)  `(media (,@c) ,@(rest f))) }
