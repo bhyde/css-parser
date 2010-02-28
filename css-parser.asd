@@ -9,4 +9,5 @@
   :serial t
   :components ((:file "packages")
                (:file "utilities")
-               (:file "parser")))
+               (:file "parser")
+               #+5am (:file "tests")))

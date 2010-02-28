@@ -1,1 +1,31 @@
-the veneer of noise
+This is a parser for cascading style sheets.  The grammar rules and actions are are stated in css.peg.
+That is converted into parser.lisp using metapeg[2].
+
+This is an ASDF system.  In fact you must load it that way.
+
+  CL-USER> (in-package "CSS-PARSER")
+  #<Package "CSS-PARSER">
+  CSS-PARSER> (parse-string "DIV.example>LI{color:#333}")
+  (STYLESHEET (CSS-RULE (CHILD (PATH (ELEMENT "DIV") (CLASS "example")) (ELEMENT "LI")) -> ("color" (COLOR "333"))))
+  NIL
+  CSS-PARSER> 
+
+If you load fiveAM[3] prior to loading this then a bit-o-testing code will be included; which you can
+run as so:
+
+  CSS-PARSER> (run! 'css-parser)
+  ......................
+   Did 22 checks.
+     Pass: 22 (100%)
+     Skip: 0 ( 0%)
+     Fail: 0 ( 0%)
+
+  NIL
+  CSS-PARSER> 
+
+Those tests are in tests.lisp and provide examples.
+
+[1] A PEG parser is a recursive decent parser with memoization mixed in so the performance
+remains linear.
+
+[2] See <http://www.cliki.net/metapeg>, though I'm actually using <http://github.com/bhyde/metapeg>

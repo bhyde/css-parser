@@ -10,7 +10,7 @@
 (defun file-of-system (system filename)
   (make-pathname :defaults filename :directory (pathname-directory (asdf:component-relative-pathname (asdf:find-system system)))))
 
-(defun css-parser-file ()
+(defun css-parser-pathname ()
   (file-of-system 'css-parser "parser.lisp"))
 
 (defun collect-leaves (tree)
@@ -63,6 +63,7 @@
 
 
 (defun build-parser ()
+  "Re-create parser.lisp from css.peg"
   (multiple-value-bind (pegs actions)
       (metapeg:parse (file-of-system 'css-parser "css.peg") (file-of-system 'metapeg "metapeg.lisp"))
     (with-open-file (*standard-output* (file-of-system 'css-parser "parser.lisp")
@@ -100,48 +101,29 @@
                                        ,@stms))
                                  data)))))))))
 
+(defvar *lisp-extension* "lisp")
 
+(defparameter *compiled-file-extension*
+  #+ccl (pathname-type CCL:*.FASL-PATHNAME*)
+  #+sbcl SB-FASL:*FASL-FILE-TYPE*
+  #-(or ccl sbcl) (error "Unrecognized lisp implementation."))
 
-(defun run-parser (file &optional rebuild)
-  (when rebuild (build-parser))
-  (let* ((lisp (css-parser-file))
-         (fasl (make-pathname :defaults (css-parser-file) :type "dx64fsl"))
-         (ldate (file-write-date lisp))
-         (fdate? (file-write-date fasl))
-         (parser (if (and fdate? (< ldate fdate?)) fasl lisp)))
-    (when (equal parser lisp)
-      (format t "Consider compiling parser."))
-    (metapeg:parse file parser)))
+(defun parser-fasl-compile-as-necessary ()
+  (let* ((lisp-pathname (css-parser-pathname))
+         (fasl-pathname (make-pathname :defaults (css-parser-pathname) :type *compiled-file-extension*))
+         (ldate (file-write-date lisp-pathname))
+         (fdate? (file-write-date fasl-pathname)))
+    (unless (and fdate? (< ldate fdate?))
+      (compile-file lisp-pathname))
+    fasl-pathname))
+
+(defun run-parser (file)
+  "Parse the css file given, return sexpr or error."
+  (metapeg:parse file (parser-fasl-compile-as-necessary)))
 
 (defun parse-string (str)
-  (handler-case (metapeg:parse-string str (css-parser-file))
-    (error (e) (format t "~&Error ~A" e))))
+  "Parse the string, presumably cascading style sheet, or error"
+  (metapeg:parse-string str (parser-fasl-compile-as-necessary)))
 
-(defun test-parser ()
-  (flet ((test (a b)
-           (let ((result
-                  (handler-case
-                      (metapeg:parse-string a (css-parser-file))
-                    (error (e)
-                      (format t "~&Error: ~A" e)
-                      :foo))))
-             (unless (equal result b)               (format t "~&Failed ~S" a)))))
-    (test "foo{bar:2}"
-          '(stylesheet (css-rule (element "foo") -> ("bar" 2))))
-    (test "dinner { bar : 23; cat: 3in }
-breakfast { bar : +23; bar : -23cm; bar : +23in;}
-food { dogs : 23hz  }"
-          '(stylesheet
-            (css-rule (element "dinner") ->
-             ("bar" 23) ("cat" (IN 3)))
-            (css-rule (element "breakfast") ->
-             ("bar" (+ 23)) ("bar" (- (CM 23))) ("bar" (+ (IN 23))))
-            (css-rule (element "food") -> 
-             ("dogs" (HZ 23)))))
-    (test ".fo { b: 1; }" '(stylesheet (css-rule (class "fo") -> ("b" 1))))
-    (test " #fo { b: 1;}" '(stylesheet (css-rule (id "fo") -> ("b" 1))))
-    (test "e,f,.c,#i,:h{b:1}" '(stylesheet (css-rule (or (element "e") (element "f") (class "c") (id "i") (pseudo "h")) -> ("b" 1))))
-    (test "e:h{b:1}" '(stylesheet (css-rule (path (element "e") (pseudo "h")) -> ("b" 1))))
-    (test "e {b:1}" '(stylesheet (css-rule (element "e") -> ("b" 1))))
-    :done))
+
 
